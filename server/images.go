@@ -54,6 +54,21 @@ type registryOptions struct {
 	CheckRedirect func(req *http.Request, via []*http.Request) error
 }
 
+// DockerConfig 结构体
+type DockerConfig struct {
+	Auths             map[string]AuthEntry `json:"auths"`
+	HttpHeaders       map[string]string    `json:"HttpHeaders"`
+	CredsStore        string               `json:"credsStore"`
+	Experimental      string               `json:"experimental"`
+	StackOrchestrator string               `json:"stackOrchestrator"`
+	Features          map[string]bool      `json:"features"`
+}
+
+// AuthEntry 结构体
+type AuthEntry struct {
+	Auth string `json:"auth"`
+}
+
 type Model struct {
 	Name           string `json:"name"`
 	Config         ConfigV2
