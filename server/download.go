@@ -262,7 +262,11 @@ func (b *blobDownload) run(ctx context.Context, requestURL *url.URL, opts *regis
 			if resp.StatusCode != http.StatusTemporaryRedirect && resp.StatusCode != http.StatusOK {
 				return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
 			}
-			return resp.Location()
+			location, err := resp.Location()
+			if err != nil && resp.StatusCode == http.StatusOK {
+				return requestURL, nil
+			}
+			return location, err
 		}
 	}()
 	if err != nil {
@@ -281,7 +285,7 @@ func (b *blobDownload) run(ctx context.Context, requestURL *url.URL, opts *regis
 			var err error
 			for try := 0; try < maxRetries; try++ {
 				w := io.NewOffsetWriter(file, part.StartsAt())
-				err = b.downloadChunk(inner, directURL, w, part)
+				err = b.downloadChunk(inner, directURL, w, part, opts)
 				switch {
 				case errors.Is(err, context.Canceled), errors.Is(err, syscall.ENOSPC):
 					// return immediately if the context is canceled or the device is out of space
@@ -325,16 +329,24 @@ func (b *blobDownload) run(ctx context.Context, requestURL *url.URL, opts *regis
 	return nil
 }
 
-func (b *blobDownload) downloadChunk(ctx context.Context, requestURL *url.URL, w io.Writer, part *blobDownloadPart) error {
+func (b *blobDownload) downloadChunk(ctx context.Context, requestURL *url.URL, w io.Writer, part *blobDownloadPart, opts *registryOptions) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
 		if err != nil {
 			return err
 		}
+		if opts != nil {
+			if opts.Token != "" {
+				req.Header.Set("Authorization", "Bearer "+opts.Token)
+			} else if opts.Username != "" && opts.Password != "" {
+				req.SetBasicAuth(opts.Username, opts.Password)
+			}
+		}
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", part.StartsAt(), part.StopsAt()-1))
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
+			slog.Error("failed to download chunk", "err", err)
 			return err
 		}
 		defer resp.Body.Close()

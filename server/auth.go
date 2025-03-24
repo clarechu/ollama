@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -67,7 +70,7 @@ func getAuthorizationToken(ctx context.Context, challenge registryChallenge) (st
 
 	headers.Add("Authorization", signature)
 
-	response, err := makeRequest(ctx, http.MethodGet, redirectURL, headers, nil, &registryOptions{})
+	response, err := makeRequest(ctx, http.MethodGet, redirectURL, headers, nil, getRegistryOptions(redirectURL))
 	if err != nil {
 		return "", err
 	}
@@ -92,4 +95,60 @@ func getAuthorizationToken(ctx context.Context, challenge registryChallenge) (st
 	}
 
 	return token.Token, nil
+}
+
+func getRegistryOptions(redirectURL *url.URL) *registryOptions {
+	insecure := false
+	if redirectURL.Scheme == "https" {
+		insecure = true
+	}
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("invalid redirect URL", "err", err)
+		return &registryOptions{}
+	}
+	config, err := loadDockerConfig(filepath.Join(dir, ".docker", "config.json"))
+	if err != nil {
+		slog.Error("docker config.json not found", "err", err)
+		return &registryOptions{}
+	}
+	for k, v := range config.Auths {
+
+		if k == redirectURL.Host {
+			username, password, err := decodeAuth(v.Auth)
+			if err != nil {
+				slog.Error("get username and password redirect URL", "err", err)
+				return &registryOptions{}
+			}
+			return &registryOptions{
+				Insecure: insecure,
+				Username: username,
+				Password: password,
+			}
+		}
+	}
+	return &registryOptions{}
+}
+
+func loadDockerConfig(filePath string) (*DockerConfig, error) {
+	file, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	config := &DockerConfig{}
+	err = json.Unmarshal(file, config)
+	return config, err
+}
+
+func decodeAuth(auth string) (string, string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(auth)
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid auth format")
+	}
+	return parts[0], parts[1], nil
 }
