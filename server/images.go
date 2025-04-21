@@ -608,6 +608,7 @@ func PullModel(ctx context.Context, name string, regOpts *registryOptions, fn fu
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
+		fmt.Println("error creating manifest directory: fp : error" + fp)
 		return err
 	}
 

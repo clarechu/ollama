@@ -286,7 +286,8 @@ func (n Name) Filepath() string {
 		panic("illegal attempt to get filepath of invalid name")
 	}
 	return filepath.Join(
-		n.Host,
+		strings.ReplaceAll(n.Host, ":", "-"),
+		//n.Host,
 		n.Namespace,
 		n.Model,
 		n.Tag,
